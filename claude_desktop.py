@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Claude Desktop for Linux - Enhanced Version (Fixed)
-- No menu bar
-- Claude.ai logo icon
-- OAuth/Google login support
+Claude Desktop for Linux - OAuth Fixed Version
+- Enhanced OAuth/Google login support
+- Better popup handling
+- Proper cookie management
 """
 
 import sys
@@ -21,73 +21,127 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QUrl, QSettings, QTimer, pyqtSignal, QThread, QSize
 from PyQt6.QtGui import QAction, QIcon, QFont, QTextCursor, QDesktopServices, QKeySequence, QPixmap
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage, QWebEngineSettings
+from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage, QWebEngineSettings, QWebEngineScript
 from PyQt6.QtNetwork import QNetworkRequest
 import urllib.request
 
 
-class ClaudeWebPage(QWebEnginePage):
-    """Custom web page to handle Claude.ai interactions and OAuth"""
+class OAuthWebPage(QWebEnginePage):
+    """Web page specifically for OAuth popups"""
     
     def __init__(self, profile, parent=None):
         super().__init__(profile, parent)
         
-        # Enable features needed for OAuth
+        # Enable all features needed for OAuth
         settings = self.settings()
         settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
-        settings.setAttribute(QWebEngineSettings.WebAttribute.AllowRunningInsecureContent, False)
         settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanOpenWindows, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.AllowWindowActivationFromJavaScript, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
+        
+        # Listen to URL changes
+        self.urlChanged.connect(self.on_url_changed)
+    
+    def on_url_changed(self, url):
+        """Monitor URL changes to detect successful login"""
+        url_str = url.toString()
+        print(f"OAuth URL changed: {url_str}")
+        
+        # If we're back at claude.ai after OAuth, close popup
+        if 'claude.ai/chat' in url_str or 'claude.ai/?' in url_str:
+            if self.view() and hasattr(self.view(), 'is_popup'):
+                QTimer.singleShot(1000, self.view().close)
+
+
+class ClaudeWebPage(QWebEnginePage):
+    """Custom web page for main Claude.ai interface with full OAuth support"""
+    
+    popup_created = pyqtSignal(object)
+    
+    def __init__(self, profile, parent=None):
+        super().__init__(profile, parent)
+        
+        # Enable ALL features needed for modern web apps and OAuth
+        settings = self.settings()
+        settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanOpenWindows, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.AllowWindowActivationFromJavaScript, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.AllowRunningInsecureContent, False)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.AllowGeolocationOnInsecureOrigins, False)
+        
+        # Enable DNS prefetching
+        settings.setAttribute(QWebEngineSettings.WebAttribute.DnsPrefetchEnabled, True)
     
     def acceptNavigationRequest(self, url, nav_type, is_main_frame):
-        """Handle navigation requests - allow OAuth flows"""
+        """Handle navigation - allow everything Claude.ai needs"""
         url_string = url.toString()
+        host = url.host()
         
-        # Allow all Claude.ai and Anthropic domains
-        allowed_domains = ['claude.ai', 'anthropic.com', 'accounts.google.com', 'accounts.anthropic.com']
+        print(f"Navigation request: {url_string}")
         
-        # Check if URL is from allowed domains or OAuth flow
-        if any(domain in url.host() for domain in allowed_domains):
+        # Allow all these domains (needed for OAuth)
+        allowed_domains = [
+            'claude.ai',
+            'anthropic.com',
+            'accounts.google.com',
+            'accounts.anthropic.com',
+            'google.com',
+            'gstatic.com',
+            'googleapis.com',
+            'googleusercontent.com',
+            'doubleclick.net',
+            'google-analytics.com'
+        ]
+        
+        # Check if domain is allowed
+        for domain in allowed_domains:
+            if domain in host:
+                return True
+        
+        # Allow OAuth and callback URLs
+        if any(keyword in url_string.lower() for keyword in ['oauth', 'callback', 'auth', 'login', 'signin']):
             return True
         
-        # Allow OAuth callback URLs
-        if 'oauth' in url_string.lower() or 'callback' in url_string.lower():
-            return True
-        
-        # Allow Google authentication
-        if 'google' in url.host() or 'gstatic' in url.host() or 'googleapis' in url.host():
-            return True
-        
-        # For external links clicked by user, open in default browser
+        # For external links clicked by user (not navigation), open in browser
         if nav_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
-            if not any(domain in url.host() for domain in allowed_domains):
+            if not any(domain in host for domain in allowed_domains):
                 QDesktopServices.openUrl(url)
                 return False
         
+        # Allow everything else
         return True
     
     def createWindow(self, window_type):
-        """Handle popup windows for OAuth"""
-        # Create a new page for popups (like Google OAuth)
-        page = ClaudeWebPage(self.profile(), self.view())
-        page.urlChanged.connect(lambda url: self.handle_popup_url(url, page))
+        """Create popup windows for OAuth - CRITICAL for Google login"""
+        print(f"Creating popup window of type: {window_type}")
         
-        # Create a new view for the popup
+        # Create OAuth-enabled page
+        page = OAuthWebPage(self.profile(), None)
+        
+        # Create popup view
         view = QWebEngineView()
         view.setPage(page)
-        view.setWindowTitle("Sign In")
-        view.resize(500, 600)
+        view.setWindowTitle("Sign In - Claude")
+        view.resize(500, 700)
+        view.is_popup = True
+        
+        # Show the popup
         view.show()
+        view.raise_()
+        view.activateWindow()
+        
+        # Emit signal
+        self.popup_created.emit(view)
         
         return page
-    
-    def handle_popup_url(self, url, page):
-        """Handle URLs in popup windows"""
-        # If we're back at claude.ai after OAuth, close the popup
-        if 'claude.ai' in url.toString() and 'chat' in url.toString():
-            if page.view():
-                page.view().close()
 
 
 class SystemTrayIcon(QSystemTrayIcon):
@@ -194,22 +248,6 @@ class ConversationManager:
             'updated_at': datetime.now().isoformat()
         }
         return self.save_conversation(conversation)
-    
-    def search_conversations(self, query):
-        """Search conversations by content"""
-        results = []
-        query_lower = query.lower()
-        for conv in self.conversations:
-            # Search in title
-            if query_lower in conv.get('title', '').lower():
-                results.append(conv)
-                continue
-            # Search in messages
-            for msg in conv.get('messages', []):
-                if query_lower in msg.get('content', '').lower():
-                    results.append(conv)
-                    break
-        return results
 
 
 class SettingsDialog(QDialog):
@@ -262,16 +300,6 @@ class SettingsDialog(QDialog):
         behavior_widget = QWidget()
         behavior_layout = QVBoxLayout()
         
-        # Auto-save conversations
-        self.auto_save = QCheckBox("Auto-save conversations")
-        self.auto_save.setChecked(self.settings.value("auto_save", True, type=bool))
-        behavior_layout.addWidget(self.auto_save)
-        
-        # Show timestamps
-        self.show_timestamps = QCheckBox("Show message timestamps")
-        self.show_timestamps.setChecked(self.settings.value("show_timestamps", True, type=bool))
-        behavior_layout.addWidget(self.show_timestamps)
-        
         # System tray
         self.minimize_to_tray = QCheckBox("Minimize to system tray")
         self.minimize_to_tray.setChecked(self.settings.value("minimize_to_tray", True, type=bool))
@@ -296,10 +324,14 @@ class SettingsDialog(QDialog):
         advanced_layout = QVBoxLayout()
         
         # Cache management
-        cache_group = QLabel("<b>Cache Management</b>")
+        cache_group = QLabel("<b>Cache & Cookies</b>")
         advanced_layout.addWidget(cache_group)
         
-        clear_cache_btn = QPushButton("Clear Browser Cache")
+        info_label = QLabel("Clear cache and cookies if you have login issues")
+        info_label.setWordWrap(True)
+        advanced_layout.addWidget(info_label)
+        
+        clear_cache_btn = QPushButton("Clear Cache & Cookies")
         clear_cache_btn.clicked.connect(self.clear_cache)
         advanced_layout.addWidget(clear_cache_btn)
         
@@ -325,101 +357,45 @@ class SettingsDialog(QDialog):
         reply = QMessageBox.question(
             self,
             "Clear Cache",
-            "This will clear the browser cache and log you out. Continue?",
+            "This will clear the browser cache and cookies and log you out. Continue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if reply == QMessageBox.StandardButton.Yes:
-            QMessageBox.information(self, "Cache Cleared", "Please restart the application for changes to take effect.")
+            # Clear cache directories
+            cache_dir = Path.home() / ".config" / "claude-desktop" / "cache"
+            storage_dir = Path.home() / ".config" / "claude-desktop" / "storage"
+            
+            try:
+                import shutil
+                if cache_dir.exists():
+                    shutil.rmtree(cache_dir)
+                if storage_dir.exists():
+                    shutil.rmtree(storage_dir)
+                QMessageBox.information(self, "Cache Cleared", "Cache and cookies cleared. Please restart the application.")
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Could not clear cache: {e}")
     
     def get_settings(self):
         """Return current settings"""
         return {
             'theme': self.theme_combo.currentText(),
             'font_size': self.font_size.currentText(),
-            'auto_save': self.auto_save.isChecked(),
-            'show_timestamps': self.show_timestamps.isChecked(),
             'minimize_to_tray': self.minimize_to_tray.isChecked(),
             'start_minimized': self.start_minimized.isChecked(),
             'show_notifications': self.show_notifications.isChecked()
         }
 
 
-class SearchDialog(QDialog):
-    """Search conversations dialog"""
-    
-    def __init__(self, conv_manager, parent=None):
-        super().__init__(parent)
-        self.conv_manager = conv_manager
-        self.setWindowTitle("Search Conversations")
-        self.setMinimumSize(600, 400)
-        self.init_ui()
-    
-    def init_ui(self):
-        layout = QVBoxLayout()
-        
-        # Search input
-        search_layout = QHBoxLayout()
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search conversations...")
-        self.search_input.textChanged.connect(self.perform_search)
-        search_layout.addWidget(self.search_input)
-        
-        search_btn = QPushButton("Search")
-        search_btn.clicked.connect(self.perform_search)
-        search_layout.addWidget(search_btn)
-        
-        layout.addLayout(search_layout)
-        
-        # Results list
-        self.results_list = QListWidget()
-        self.results_list.itemDoubleClicked.connect(self.open_conversation)
-        layout.addWidget(self.results_list)
-        
-        # Status label
-        self.status_label = QLabel("Enter search terms to find conversations")
-        layout.addWidget(self.status_label)
-        
-        # Buttons
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-        
-        self.setLayout(layout)
-    
-    def perform_search(self):
-        """Perform search and update results"""
-        query = self.search_input.text().strip()
-        if not query:
-            self.results_list.clear()
-            self.status_label.setText("Enter search terms to find conversations")
-            return
-        
-        results = self.conv_manager.search_conversations(query)
-        self.results_list.clear()
-        
-        for conv in results:
-            title = conv.get('title', 'Untitled')
-            updated = conv.get('updated_at', '')
-            item = QListWidgetItem(f"{title} - {updated}")
-            item.setData(Qt.ItemDataRole.UserRole, conv)
-            self.results_list.addItem(item)
-        
-        self.status_label.setText(f"Found {len(results)} conversation(s)")
-    
-    def open_conversation(self, item):
-        """Open selected conversation"""
-        conv = item.data(Qt.ItemDataRole.UserRole)
-        self.selected_conversation = conv
-        self.accept()
-
-
 class ClaudeDesktopApp(QMainWindow):
-    """Main application window - No menu bar, with Claude icon"""
+    """Main application window"""
     
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Claude Desktop")
         self.setGeometry(100, 100, 1400, 900)
+        
+        # Track popup windows
+        self.popup_windows = []
         
         # Initialize settings
         self.settings = QSettings("ClaudeDesktop", "ClaudeLinux")
@@ -445,24 +421,18 @@ class ClaudeDesktopApp(QMainWindow):
         # Check if should start minimized
         if self.settings.value("start_minimized", False, type=bool) and self.tray_icon:
             self.hide()
-        
-        # Load last conversation if exists
-        if self.conv_manager.conversations:
-            self.load_conversation(self.conv_manager.conversations[0])
     
     def setup_icon(self):
         """Download and setup Claude.ai icon"""
         icon_path = self.config_dir / "claude_icon.png"
         
-        # Try to download Claude.ai favicon/logo
+        # Try to download Claude.ai favicon
         if not icon_path.exists():
             try:
-                # Try to get Claude.ai favicon
                 url = "https://claude.ai/favicon.ico"
                 urllib.request.urlretrieve(url, str(icon_path))
             except Exception as e:
                 print(f"Could not download icon: {e}")
-                # Create a fallback icon
                 self.create_fallback_icon(icon_path)
         
         # Set window icon
@@ -473,7 +443,6 @@ class ClaudeDesktopApp(QMainWindow):
     
     def create_fallback_icon(self, icon_path):
         """Create a fallback icon if download fails"""
-        # Create a simple purple "C" icon
         pixmap = QPixmap(64, 64)
         pixmap.fill(Qt.GlobalColor.transparent)
         
@@ -482,7 +451,7 @@ class ClaudeDesktopApp(QMainWindow):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         # Draw purple circle background
-        painter.setBrush(QColor(107, 70, 193))  # Claude purple
+        painter.setBrush(QColor(107, 70, 193))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(2, 2, 60, 60)
         
@@ -509,8 +478,6 @@ class ClaudeDesktopApp(QMainWindow):
     
     def init_ui(self):
         """Initialize the user interface - NO MENU BAR"""
-        # NO MENU BAR - Removed completely
-        
         # Create toolbar (minimal)
         self.create_toolbar()
         
@@ -538,54 +505,27 @@ class ClaudeDesktopApp(QMainWindow):
         main_widget.setLayout(main_layout)
         
         # Create status bar
-        self.statusBar().showMessage("Ready")
+        self.statusBar().showMessage("Ready - If login doesn't work, try Settings > Clear Cache & Cookies")
         
         # Setup keyboard shortcuts
         self.setup_shortcuts()
     
     def setup_shortcuts(self):
         """Setup keyboard shortcuts"""
-        # Ctrl+N: New chat
-        new_chat_shortcut = QKeySequence("Ctrl+N")
-        new_action = QAction(self)
-        new_action.setShortcut(new_chat_shortcut)
-        new_action.triggered.connect(self.new_chat)
-        self.addAction(new_action)
+        shortcuts = [
+            ("Ctrl+N", self.new_chat),
+            ("Ctrl+B", self.toggle_sidebar),
+            ("Ctrl+,", self.show_settings),
+            ("F11", self.toggle_fullscreen),
+            ("Ctrl+Q", self.close_app),
+            ("F5", self.reload_page)
+        ]
         
-        # Ctrl+F: Search
-        search_shortcut = QKeySequence("Ctrl+F")
-        search_action = QAction(self)
-        search_action.setShortcut(search_shortcut)
-        search_action.triggered.connect(self.search_conversations)
-        self.addAction(search_action)
-        
-        # Ctrl+B: Toggle sidebar
-        toggle_shortcut = QKeySequence("Ctrl+B")
-        toggle_action = QAction(self)
-        toggle_action.setShortcut(toggle_shortcut)
-        toggle_action.triggered.connect(self.toggle_sidebar)
-        self.addAction(toggle_action)
-        
-        # Ctrl+,: Settings
-        settings_shortcut = QKeySequence("Ctrl+,")
-        settings_action = QAction(self)
-        settings_action.setShortcut(settings_shortcut)
-        settings_action.triggered.connect(self.show_settings)
-        self.addAction(settings_action)
-        
-        # F11: Fullscreen
-        fullscreen_shortcut = QKeySequence("F11")
-        fullscreen_action = QAction(self)
-        fullscreen_action.setShortcut(fullscreen_shortcut)
-        fullscreen_action.triggered.connect(self.toggle_fullscreen)
-        self.addAction(fullscreen_action)
-        
-        # Ctrl+Q: Quit
-        quit_shortcut = QKeySequence("Ctrl+Q")
-        quit_action = QAction(self)
-        quit_action.setShortcut(quit_shortcut)
-        quit_action.triggered.connect(self.close_app)
-        self.addAction(quit_action)
+        for shortcut_key, handler in shortcuts:
+            action = QAction(self)
+            action.setShortcut(QKeySequence(shortcut_key))
+            action.triggered.connect(handler)
+            self.addAction(action)
     
     def create_toolbar(self):
         """Create minimal toolbar"""
@@ -599,10 +539,10 @@ class ClaudeDesktopApp(QMainWindow):
         new_chat_btn.triggered.connect(self.new_chat)
         toolbar.addAction(new_chat_btn)
         
-        # Search button
-        search_btn = QAction("Search", self)
-        search_btn.triggered.connect(self.search_conversations)
-        toolbar.addAction(search_btn)
+        # Reload button
+        reload_btn = QAction("Reload", self)
+        reload_btn.triggered.connect(self.reload_page)
+        toolbar.addAction(reload_btn)
         
         toolbar.addSeparator()
         
@@ -636,9 +576,6 @@ class ClaudeDesktopApp(QMainWindow):
         # Conversation list
         self.conv_list_widget = QListWidget()
         self.conv_list_widget.itemClicked.connect(self.on_conversation_selected)
-        self.conv_list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.conv_list_widget.customContextMenuRequested.connect(self.show_conversation_context_menu)
-        self.update_conversation_list()
         layout.addWidget(self.conv_list_widget)
         
         panel.setLayout(layout)
@@ -651,17 +588,27 @@ class ClaudeDesktopApp(QMainWindow):
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # Web view for Claude.ai with OAuth support
-        self.web_profile = QWebEngineProfile.defaultProfile()
+        # Create dedicated profile for this app
+        self.web_profile = QWebEngineProfile("ClaudeDesktop", self)
         
-        # Set up persistent storage
+        # Set up persistent storage with proper paths
         cache_path = str(self.config_dir / "cache")
-        self.web_profile.setCachePath(cache_path)
-        self.web_profile.setPersistentStoragePath(str(self.config_dir / "storage"))
-        self.web_profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
+        storage_path = str(self.config_dir / "storage")
         
-        # Create custom page with OAuth support
+        self.web_profile.setCachePath(cache_path)
+        self.web_profile.setPersistentStoragePath(storage_path)
+        self.web_profile.setPersistentCookiesPolicy(
+            QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies
+        )
+        
+        # Enable third-party cookies (needed for OAuth)
+        self.web_profile.settings().setAttribute(
+            QWebEngineSettings.WebAttribute.LocalStorageEnabled, True
+        )
+        
+        # Create custom page with full OAuth support
         self.web_page = ClaudeWebPage(self.web_profile)
+        self.web_page.popup_created.connect(self.on_popup_created)
         
         # Create web view
         self.web_view = QWebEngineView()
@@ -675,98 +622,24 @@ class ClaudeDesktopApp(QMainWindow):
         
         return panel
     
-    def update_conversation_list(self):
-        """Update the conversation list widget"""
-        self.conv_list_widget.clear()
-        for conv in self.conv_manager.conversations:
-            title = conv.get('title', 'Untitled')
-            updated = conv.get('updated_at', '')
-            if updated:
-                try:
-                    dt = datetime.fromisoformat(updated)
-                    time_str = dt.strftime("%Y-%m-%d %H:%M")
-                    display_text = f"{title}\n{time_str}"
-                except:
-                    display_text = title
-            else:
-                display_text = title
-            
-            item = QListWidgetItem(display_text)
-            item.setData(Qt.ItemDataRole.UserRole, conv)
-            self.conv_list_widget.addItem(item)
+    def on_popup_created(self, view):
+        """Track popup windows"""
+        self.popup_windows.append(view)
+        print(f"Popup window created and shown")
     
     def on_conversation_selected(self, item):
         """Handle conversation selection"""
-        conv = item.data(Qt.ItemDataRole.UserRole)
-        self.load_conversation(conv)
-    
-    def show_conversation_context_menu(self, position):
-        """Show context menu for conversation list"""
-        item = self.conv_list_widget.itemAt(position)
-        if not item:
-            return
-        
-        menu = QMenu()
-        
-        open_action = QAction("Open", self)
-        open_action.triggered.connect(lambda: self.on_conversation_selected(item))
-        menu.addAction(open_action)
-        
-        rename_action = QAction("Rename", self)
-        rename_action.triggered.connect(lambda: self.rename_conversation(item))
-        menu.addAction(rename_action)
-        
-        menu.addSeparator()
-        
-        delete_action = QAction("Delete", self)
-        delete_action.triggered.connect(lambda: self.delete_conversation(item))
-        menu.addAction(delete_action)
-        
-        menu.exec(self.conv_list_widget.mapToGlobal(position))
-    
-    def rename_conversation(self, item):
-        """Rename a conversation"""
-        conv = item.data(Qt.ItemDataRole.UserRole)
-        new_title, ok = QInputDialog.getText(
-            self,
-            "Rename Conversation",
-            "Enter new title:",
-            text=conv.get('title', '')
-        )
-        if ok and new_title:
-            conv['title'] = new_title
-            self.conv_manager.save_conversation(conv)
-            self.update_conversation_list()
-    
-    def delete_conversation(self, item):
-        """Delete a conversation"""
-        conv = item.data(Qt.ItemDataRole.UserRole)
-        reply = QMessageBox.question(
-            self,
-            "Delete Conversation",
-            f"Are you sure you want to delete '{conv.get('title', 'this conversation')}'?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            self.conv_manager.delete_conversation(conv['id'])
-            self.update_conversation_list()
-    
-    def load_conversation(self, conversation):
-        """Load a conversation"""
-        self.current_conversation = conversation
-        self.statusBar().showMessage(f"Loaded: {conversation.get('title', 'Untitled')}")
+        pass
     
     def new_chat(self):
-        """Create a new chat - just reload Claude.ai"""
+        """Create a new chat"""
         self.web_view.setUrl(QUrl("https://claude.ai/"))
-        self.statusBar().showMessage("New chat started")
+        self.statusBar().showMessage("Loading new chat...")
     
-    def search_conversations(self):
-        """Open search dialog"""
-        dialog = SearchDialog(self.conv_manager, self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            if hasattr(dialog, 'selected_conversation'):
-                self.load_conversation(dialog.selected_conversation)
+    def reload_page(self):
+        """Reload the current page"""
+        self.web_view.reload()
+        self.statusBar().showMessage("Reloading...")
     
     def toggle_sidebar(self):
         """Toggle the conversation sidebar"""
@@ -791,10 +664,8 @@ class ClaudeDesktopApp(QMainWindow):
     
     def apply_theme(self):
         """Apply the selected theme"""
-        theme = self.settings.value("theme", "System")
         font_size_setting = self.settings.value("font_size", "Medium")
         
-        # Font size mapping
         font_sizes = {
             "Small": 9,
             "Medium": 10,
@@ -803,7 +674,6 @@ class ClaudeDesktopApp(QMainWindow):
         }
         font_size = font_sizes.get(font_size_setting, 10)
         
-        # Apply font
         app = QApplication.instance()
         font = app.font()
         font.setPointSize(font_size)
@@ -811,20 +681,18 @@ class ClaudeDesktopApp(QMainWindow):
     
     def close_app(self):
         """Properly close the application"""
-        # Save current conversation if auto-save is enabled
-        if self.current_conversation and self.settings.value("auto_save", True, type=bool):
-            self.conv_manager.save_conversation(self.current_conversation)
+        # Close all popup windows
+        for popup in self.popup_windows:
+            if popup and not popup.isHidden():
+                popup.close()
         
-        # Save window geometry
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("windowState", self.saveState())
         
-        # Quit application
         QApplication.quit()
     
     def closeEvent(self, event):
         """Handle window close event"""
-        # Check if should minimize to tray
         if (self.settings.value("minimize_to_tray", True, type=bool) and 
             self.tray_icon and 
             self.tray_icon.isVisible()):
@@ -846,6 +714,9 @@ class ClaudeDesktopApp(QMainWindow):
 
 def main():
     """Main application entry point"""
+    # Enable better OAuth support
+    os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = '--enable-features=ThirdPartyCookies'
+    
     app = QApplication(sys.argv)
     
     # Set application metadata
