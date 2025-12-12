@@ -11,89 +11,77 @@ A native desktop application for Claude.ai with **full OAuth support** (includin
 - ✅ **Google OAuth works perfectly!** (uses Electron/Chromium)
 - ✅ All login methods supported
 - ✅ Native desktop integration
+- ✅ Clean interface (no menu bar clutter)
 - ✅ Persistent sessions
-- ✅ Keyboard shortcuts
-- ✅ System tray support
+- ✅ Custom Claude AI icon
 
-## 🚀 Quick Start
+## 🚀 Quick Install
 
-### Prerequisites
-
-- Node.js 18+ and npm
-- Fedora/RHEL/Ubuntu or any modern Linux
-
-### Installation
+### Option 1: Quick Install (Recommended)
 ```bash
 git clone https://github.com/alduccino/claude-desktop-linux.git
 cd claude-desktop-linux
-
-# Install Node.js (Fedora)
-sudo dnf install nodejs npm
-
-# Install dependencies
 npm install
+npm run build
+./install.sh
+```
 
-# Run
+The installer will:
+- Build the AppImage
+- Create desktop menu entry
+- Optionally install terminal command
+
+### Option 2: Run from Source
+```bash
+git clone https://github.com/alduccino/claude-desktop-linux.git
+cd claude-desktop-linux
+npm install
 npm start
 ```
 
-### Build Packages
+### Option 3: Download Release
+
+1. Download the latest AppImage from [Releases](https://github.com/alduccino/claude-desktop-linux/releases)
+2. Make it executable: `chmod +x "Claude Desktop-2.0.0.AppImage"`
+3. Run it: `./Claude Desktop-2.0.0.AppImage`
+4. Run `./install.sh` to create desktop shortcut
+
+## 🗑️ Uninstall
 ```bash
-npm run build:linux
+./uninstall.sh
 ```
 
-This creates:
-- **AppImage** (portable): `dist/Claude Desktop-2.0.0.AppImage`
-- **RPM** (Fedora): `dist/claude-desktop-linux-2.0.0.x86_64.rpm`
-- **DEB** (Ubuntu): `dist/claude-desktop-linux_2.0.0_amd64.deb`
-
-#### Install on Fedora:
+## 📦 Building from Source
 ```bash
-sudo dnf install ./dist/claude-desktop-linux-2.0.0.x86_64.rpm
-```
+# Install dependencies
+npm install
 
-#### Run AppImage (no installation):
-```bash
-chmod +x "./dist/Claude Desktop-2.0.0.AppImage"
-"./dist/Claude Desktop-2.0.0.AppImage"
+# Run in development
+npm start
+
+# Build AppImage
+npm run build
 ```
 
 ## ⌨️ Keyboard Shortcuts
 
-- `Ctrl+N` - New chat
-- `Ctrl+Q` - Quit
-- `Ctrl+R` - Reload
+- `Ctrl+N` - New chat (when menu enabled)
+- `Ctrl+Q` - Quit (when menu enabled)
 - `F11` - Fullscreen
 - `F12` - Developer Tools
 
-## 🔄 Migrating from v1.x (Qt/PyQt6)
+## 🔧 Requirements
 
-The previous Qt version had Google OAuth issues. **This Electron version fixes that!**
-
-Uninstall old version:
-```bash
-sudo rm -rf /opt/claude-desktop/
-sudo rm -f /usr/local/bin/claude-desktop
-sudo rm -f /usr/share/applications/claude-desktop.desktop
-```
-
-## 📦 Distribution Formats
-
-### AppImage
-- ✅ Portable, no installation
-- ✅ Works on any Linux distro
-- ✅ Self-contained
-
-### RPM/DEB
-- ✅ Native package management
-- ✅ System integration
-- ✅ Auto-updates via package manager
+- Node.js 18+
+- npm
+- Fedora 43 or any modern Linux distro
 
 ## 🐛 Troubleshooting
 
 ### Google login not working?
+It should work! But if not:
 - Clear cache: `rm -rf ~/.config/Claude\ Desktop/`
-- Restart app
+- Restart the app
 
 ### App won't start?
 ```bash
@@ -105,12 +93,14 @@ rm -rf node_modules package-lock.json
 npm install
 ```
 
-## 🔒 Security
+### Desktop shortcut not appearing?
+```bash
+# Refresh KDE menu
+kbuildsycoca6 --noincremental
 
-- Sandbox enabled
-- Context isolation
-- No Node integration in renderer
-- Certificate validation
+# Or run install script again
+./install.sh
+```
 
 ## 📄 License
 
@@ -122,4 +112,4 @@ Built with [Electron](https://www.electronjs.org/)
 
 ---
 
-**Version 2.0** - Complete rewrite in Electron for full OAuth compatibility
+**Version 2.0** - Electron rewrite with full OAuth compatibility
