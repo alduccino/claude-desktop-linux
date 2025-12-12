@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Claude Desktop for Linux - Installation Script
+# Claude Desktop for Linux - Installation Script (Fixed for Fedora 43)
 # For Fedora 43 KDE Edition
 
 set -e
@@ -46,37 +46,49 @@ echo_info "Starting Claude Desktop installation for Fedora 43 KDE..."
 echo_info "Updating system packages..."
 dnf check-update || true
 
-# Install dependencies
+# Install dependencies (with correct Fedora 43 package names)
 echo_info "Installing dependencies..."
 dnf install -y \
     python3 \
     python3-pip \
     python3-devel \
-    python3-PyQt6 \
-    python3-PyQt6-WebEngine \
+    python3-pyqt6 \
+    python3-pyqt6-webengine \
     qt6-qtbase \
     qt6-qtbase-gui \
     qt6-qtwebengine \
     breeze-icon-theme \
     breeze-gtk \
-    adwaita-qt6 \
     fontawesome-fonts \
-    liberation-fonts
+    liberation-fonts \
+    --skip-unavailable
 
 # Install Python packages
 echo_info "Installing Python dependencies..."
 pip3 install --break-system-packages \
     PyQt6 \
     PyQt6-WebEngine \
-    requests
+    requests || echo_warning "Some pip packages may already be installed"
 
 # Create installation directory
 echo_info "Creating installation directory..."
 mkdir -p "$INSTALL_DIR"
 
+# Determine which Python script to install
+if [ -f "$SCRIPT_DIR/claude_desktop_enhanced.py" ]; then
+    MAIN_SCRIPT="claude_desktop_enhanced.py"
+    echo_info "Installing Enhanced version (with system tray)"
+elif [ -f "$SCRIPT_DIR/claude_desktop.py" ]; then
+    MAIN_SCRIPT="claude_desktop.py"
+    echo_info "Installing Standard version"
+else
+    echo_error "Could not find claude_desktop.py or claude_desktop_enhanced.py"
+    exit 1
+fi
+
 # Copy application files
 echo_info "Installing application files..."
-cp "$SCRIPT_DIR/claude_desktop.py" "$INSTALL_DIR/"
+cp "$SCRIPT_DIR/$MAIN_SCRIPT" "$INSTALL_DIR/claude_desktop.py"
 chmod +x "$INSTALL_DIR/claude_desktop.py"
 
 # Create launcher script
@@ -102,6 +114,7 @@ Terminal=false
 Categories=Network;Chat;Office;
 Keywords=AI;Assistant;Chat;Claude;Anthropic;
 StartupWMClass=claude-desktop
+StartupNotify=true
 EOF
 
 # Download or create icon
@@ -116,9 +129,23 @@ cat > "$ICON_DIR/scalable/apps/claude-desktop.svg" << 'EOF'
 </svg>
 EOF
 
+# Also create PNG versions
+mkdir -p "$ICON_DIR/48x48/apps"
+mkdir -p "$ICON_DIR/64x64/apps"
+mkdir -p "$ICON_DIR/128x128/apps"
+
+# Try to convert SVG to PNG if possible
+if command -v convert &> /dev/null; then
+    echo_info "Converting icon to PNG formats..."
+    convert "$ICON_DIR/scalable/apps/claude-desktop.svg" -resize 48x48 "$ICON_DIR/48x48/apps/claude-desktop.png" 2>/dev/null || true
+    convert "$ICON_DIR/scalable/apps/claude-desktop.svg" -resize 64x64 "$ICON_DIR/64x64/apps/claude-desktop.png" 2>/dev/null || true
+    convert "$ICON_DIR/scalable/apps/claude-desktop.svg" -resize 128x128 "$ICON_DIR/128x128/apps/claude-desktop.png" 2>/dev/null || true
+fi
+
 # Update icon cache
 echo_info "Updating icon cache..."
 gtk-update-icon-cache -f -t "$ICON_DIR" 2>/dev/null || true
+xdg-icon-resource forceupdate 2>/dev/null || true
 
 # Update desktop database
 echo_info "Updating desktop database..."
@@ -142,14 +169,19 @@ echo "Uninstalling Claude Desktop..."
 rm -f /usr/local/bin/claude-desktop
 rm -f /usr/share/applications/claude-desktop.desktop
 rm -f /usr/share/icons/hicolor/scalable/apps/claude-desktop.svg
+rm -f /usr/share/icons/hicolor/48x48/apps/claude-desktop.png
+rm -f /usr/share/icons/hicolor/64x64/apps/claude-desktop.png
+rm -f /usr/share/icons/hicolor/128x128/apps/claude-desktop.png
 rm -rf /opt/claude-desktop
 
 # Update caches
 gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+xdg-icon-resource forceupdate 2>/dev/null || true
 update-desktop-database /usr/share/applications 2>/dev/null || true
 
 echo "Claude Desktop has been uninstalled."
 echo "Note: User configuration files in ~/.config/claude-desktop were preserved."
+echo "To remove user data: rm -rf ~/.config/claude-desktop"
 EOF
 
 chmod +x "$INSTALL_DIR/uninstall.sh"
@@ -169,7 +201,7 @@ Claude Desktop for Linux is a feature-complete Qt6-based desktop application tha
 - Persistent chat storage
 - Export conversations (TXT, JSON, Markdown)
 - Keyboard shortcuts
-- System tray integration
+- System tray integration (Enhanced version)
 - Auto-save functionality
 
 ## Usage
@@ -182,7 +214,7 @@ claude-desktop
 
 ### Keyboard Shortcuts
 - `Ctrl+N` - New chat
-- `Ctrl+O` - Open chat
+- `Ctrl+F` - Search conversations (Enhanced version)
 - `Ctrl+S` - Save current chat
 - `Ctrl+B` - Toggle sidebar
 - `Ctrl+,` - Settings
@@ -214,6 +246,11 @@ echo_info "  - Command line: claude-desktop"
 echo ""
 echo_info "Configuration directory: ~/.config/claude-desktop/"
 echo_info "Uninstall command: sudo $INSTALL_DIR/uninstall.sh"
+echo ""
+echo_info "Installed version: $MAIN_SCRIPT"
+echo ""
+echo_warning "Note: You may need to restart your session or run 'kbuildsycoca6' for the"
+echo_warning "application to appear in the KDE menu immediately."
 echo ""
 echo_info "To start using Claude Desktop, simply launch it from your application menu!"
 echo ""
