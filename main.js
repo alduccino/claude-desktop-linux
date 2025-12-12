@@ -1,4 +1,5 @@
-const { app, BrowserWindow, Menu, shell } = require('electron');
+const { app, BrowserWindow, shell } = require('electron');
+const path = require('path');
 
 let mainWindow;
 
@@ -7,6 +8,7 @@ function createWindow() {
     width: 1400,
     height: 900,
     title: 'Claude Desktop',
+    icon: path.join(__dirname, 'icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -15,42 +17,8 @@ function createWindow() {
     }
   });
 
-  const template = [
-    {
-      label: 'File',
-      submenu: [
-        {
-          label: 'New Chat',
-          accelerator: 'CmdOrCtrl+N',
-          click: () => mainWindow.webContents.loadURL('https://claude.ai/')
-        },
-        { type: 'separator' },
-        { label: 'Quit', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() }
-      ]
-    },
-    {
-      label: 'Edit',
-      submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
-        { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' }
-      ]
-    },
-    {
-      label: 'View',
-      submenu: [
-        { role: 'reload' },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' }
-      ]
-    }
-  ];
-
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  // Remove the menu bar completely
+  mainWindow.setMenuBarVisibility(false);
 
   // Handle OAuth popups - THIS IS THE KEY!
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -62,6 +30,7 @@ function createWindow() {
         overrideBrowserWindowOptions: {
           width: 500,
           height: 700,
+          icon: path.join(__dirname, 'icon.png'),
           webPreferences: { partition: 'persist:claude' }
         }
       };

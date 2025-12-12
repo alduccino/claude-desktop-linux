@@ -27,6 +27,7 @@
     "linux": {
       "target": "AppImage",
       "category": "Network",
+      "icon": "icon.png",
       "desktop": {
         "Name": "Claude Desktop",
         "Comment": "Claude AI Desktop Application",
