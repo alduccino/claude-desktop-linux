@@ -41,6 +41,7 @@ echo_success "AppImage is executable"
 DESKTOP_FILE="$HOME/.local/share/applications/claude-desktop.desktop"
 mkdir -p "$HOME/.local/share/applications"
 
+# Note: Exec path should NOT have quotes in .desktop files - the desktop environment handles spaces
 cat > "$DESKTOP_FILE" << DESKTOP_EOF
 [Desktop Entry]
 Name=Claude Desktop
@@ -87,7 +88,7 @@ echo_success "Installation complete! 🎉"
 echo ""
 echo "You can now:"
 echo "  • Find 'Claude Desktop' in your application menu"
-echo "  • Run from terminal: $APPIMAGE"
+echo "  • Run from terminal: \"$APPIMAGE\""
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "  • Or simply type: claude-desktop"
 fi
