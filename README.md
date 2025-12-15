@@ -31,6 +31,15 @@ The installer will:
 - Create desktop menu entry
 - Optionally install terminal command
 
+
+### Quick Update (Recommended)
+```bash
+cd ~/claude-desktop-linux
+git pull origin main
+npm install
+npm start
+```  
+
 ### Option 2: Run from Source
 ```bash
 git clone https://github.com/alduccino/claude-desktop-linux.git
